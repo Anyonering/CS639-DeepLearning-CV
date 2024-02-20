@@ -1,1 +1,5 @@
 virtual_env/
+PS1/__pycache__
+PS1/cifar-10-batches-py
+PS1/cs639/__pycache__
+PS1/softmax_best_model.pt
