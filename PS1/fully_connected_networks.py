@@ -40,7 +40,11 @@ class Linear(object):
         # You will need to reshape the input into rows.                      #
         ######################################################################
         # Replace "pass" statement with your code
-        pass
+        N = x.shape[0]
+        D = w.shape[0]
+        # M = b.shape[0]
+        x_mid = torch.reshape(x,(N,D))
+        out = torch.matmul(x_mid,w) + b
         ######################################################################
         #                        END OF YOUR CODE                            #
         ######################################################################
@@ -69,7 +73,16 @@ class Linear(object):
         # TODO: Implement the linear backward pass.      #
         ##################################################
         # Replace "pass" statement with your code
-        pass
+        N = x.shape[0]
+        D = w.shape[0]
+        M = b.shape[0]
+        db = torch.sum(dout,dim=0)
+        dx = torch.zeros_like(x)
+        dx = torch.reshape(dx,(N,D))
+        dx += dout @ w.t()
+        dw = torch.zeros_like(w)
+        dw += torch.reshape(x,(N,D)).t() @ dout
+        dx = torch.reshape(dx,x.shape)
         ##################################################
         #                END OF YOUR CODE                #
         ##################################################
@@ -96,7 +109,15 @@ class ReLU(object):
         # in-place operation.                             #
         ###################################################
         # Replace "pass" statement with your code
-        pass
+        # keep_shape = x.shape
+        # x = torch.flatten(x)
+        # out = torch.zeros_like(x)
+        # for i in range(x.shape[0]):
+        #     out[i] = max(x[i],0)
+        # out = torch.reshape(out,keep_shape)
+        # x = torch.reshape(x,keep_shape)
+        out = torch.zeros_like(x)
+        out = torch.maximum(x,out)
         ###################################################
         #                 END OF YOUR CODE                #
         ###################################################
@@ -121,7 +142,10 @@ class ReLU(object):
         # in-place operation.                               #
         #####################################################
         # Replace "pass" statement with your code
-        pass
+        dx = torch.zeros_like(x)
+        dx = torch.maximum(x,dx)
+        dx[dx>0] = 1
+        dx = dx * dout
         #####################################################
         #                  END OF YOUR CODE                 #
         #####################################################
@@ -203,7 +227,11 @@ class TwoLayerNet(object):
         # weights and biases using the keys 'W2' and 'b2'.                #
         ###################################################################
         # Replace "pass" statement with your code
-        pass
+        self.params['W1'] = torch.normal(mean=0.0, std=weight_scale,size=(input_dim,hidden_dim),dtype=dtype).to(device)
+        self.params['b1'] = torch.zeros(hidden_dim,dtype=dtype).to(device)
+        self.params['W2'] = torch.normal(mean=0.0, std=weight_scale,size=(hidden_dim,num_classes),dtype=dtype).to(device)
+        # print(self.params['W2'].std())
+        self.params['b2'] = torch.zeros(num_classes,dtype=dtype).to(device)
         ###############################################################
         #                            END OF YOUR CODE                 #
         ###############################################################
@@ -254,7 +282,12 @@ class TwoLayerNet(object):
         # scores variable.                                          #
         #############################################################
         # Replace "pass" statement with your code
-        pass
+        layer1 = Linear_ReLU()
+        layer2 = Linear()
+        out1, cache1 = layer1.forward(X,self.params['W1'],self.params['b1'])
+        out2, cache2 = layer2.forward(out1,self.params['W2'],self.params['b2'])
+        #print("Out2:",out2)
+        scores = out2.detach()
         ##############################################################
         #                     END OF YOUR CODE                       #
         ##############################################################
@@ -276,7 +309,16 @@ class TwoLayerNet(object):
         # regularization does not include a factor of 0.5.                #
         ###################################################################
         # Replace "pass" statement with your code
-        pass
+        loss_wo_L2, grad = softmax_loss(out2,y)
+        loss = loss_wo_L2 + self.reg * (torch.sum(torch.square(self.params['W1']))
+                                        +torch.sum(torch.square(self.params['W2'])))
+        dx2,dw2,db2 =layer2.backward(grad,cache2)
+        
+        dx1,dw1,db1 =layer1.backward(dx2,cache1)
+        grads['W2'] = dw2 + 2* self.reg * self.params['W2']
+        grads['W1'] = dw1 + 2* self.reg * self.params['W1']
+        grads['b1'] = db1
+        grads['b2'] = db2
         ###################################################################
         #                     END OF YOUR CODE                            #
         ###################################################################
@@ -409,14 +451,31 @@ class FullyConnectedNet(object):
 
 
 def create_solver_instance(data_dict, dtype, device):
-    model = TwoLayerNet(hidden_dim=200, dtype=dtype, device=device)
+    model = TwoLayerNet(hidden_dim=200, dtype=dtype, weight_scale=1e-2,device=device)
     #############################################################
     # TODO: Use a Solver instance to train a TwoLayerNet that   #
     # achieves at least 50% accuracy on the validation set.     #
     #############################################################
     solver = None
     # Replace "pass" statement with your code
-    pass
+    model.reg = 0.001
+    My_data = {
+      'X_train': data_dict['X_train'],
+      'y_train': data_dict['y_train'],
+      'X_val': data_dict['X_val'],
+      'y_val': data_dict['y_val']
+    }
+    optim_configs = {}
+    solver = Solver(model,My_data,
+                    device='cuda',
+                    print_every=1000,
+                    num_epochs=120, 
+                    batch_size=128,
+                    print_acc_every=4,
+                    lr_decay = 1,
+                    optim_config={
+              'learning_rate': 5*1e-3,
+            },)
     ##############################################################
     #                    END OF YOUR CODE                        #
     ##############################################################
