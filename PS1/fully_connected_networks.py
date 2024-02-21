@@ -227,10 +227,11 @@ class TwoLayerNet(object):
         # weights and biases using the keys 'W2' and 'b2'.                #
         ###################################################################
         # Replace "pass" statement with your code
-        self.params['W1'] = torch.normal(mean=0.0, std=weight_scale,size=(input_dim,hidden_dim),dtype=dtype).to(device)
+        self.params['W1'] = weight_scale * torch.randn(size=(input_dim,hidden_dim),dtype=dtype,device=device)
+        # self.params['W1'] = torch.normal(mean=0.0, std=weight_scale,size=(input_dim,hidden_dim),dtype=dtype).to(device)
         self.params['b1'] = torch.zeros(hidden_dim,dtype=dtype).to(device)
-        self.params['W2'] = torch.normal(mean=0.0, std=weight_scale,size=(hidden_dim,num_classes),dtype=dtype).to(device)
-        # print(self.params['W2'].std())
+        self.params['W2'] = weight_scale * torch.randn(size=(hidden_dim,num_classes),dtype=dtype,device=device)
+        #self.params['W2'] = torch.normal(mean=0.0, std=weight_scale,size=(hidden_dim,num_classes),dtype=dtype).to(device)
         self.params['b2'] = torch.zeros(num_classes,dtype=dtype).to(device)
         ###############################################################
         #                            END OF YOUR CODE                 #
@@ -373,7 +374,24 @@ class FullyConnectedNet(object):
         # should be initialized to zero.                                      #
         #######################################################################
         # Replace "pass" statement with your code
-        pass
+        weight_name_list = ['W'+ str(i) for i in range(1,self.num_layers+1)]
+        bias_name_list = ['b'+ str(i) for i in range(1,self.num_layers+1)]
+
+        # initialize the first layer
+        self.params[weight_name_list[0]] = weight_scale * torch.randn(size=(input_dim,hidden_dims[0]),
+                                                                      dtype=dtype,device=device)
+        self.params[bias_name_list[0]] = torch.zeros(hidden_dims[0],dtype=dtype,device=device)
+
+        # initialize hidden layers
+        for i in range(1,self.num_layers-1):
+          self.params[weight_name_list[i]] = weight_scale * torch.randn(size=(hidden_dims[i-1],hidden_dims[i]),
+                                                                      dtype=dtype,device=device)
+          self.params[bias_name_list[i]] = torch.zeros(hidden_dims[i],dtype=dtype,device=device)
+
+        # initialize the last linear layer
+        self.params[weight_name_list[self.num_layers-1]] = weight_scale * torch.randn(size=(hidden_dims[-1],num_classes),
+                                                                      dtype=dtype,device=device)
+        self.params[bias_name_list[self.num_layers-1]] = torch.zeros(num_classes,dtype=dtype,device=device)
         #######################################################################
         #                         END OF YOUR CODE                            #
         #######################################################################
@@ -420,7 +438,25 @@ class FullyConnectedNet(object):
         #                                                                #
         ##################################################################
         # Replace "pass" statement with your code
-        pass
+        w_name_list = ['W'+ str(i) for i in range(1,self.num_layers+1)]
+        b_name_list = ['b'+ str(i) for i in range(1,self.num_layers+1)]
+
+        layer_list = [Linear_ReLU() for i in range(self.num_layers-1)]
+        layer_list.append(Linear()) 
+        temp_out = None
+        cache_list = []
+        temp_cache = None
+
+        # start the forward pass
+        temp_out, temp_cache = layer_list[0].forward(X,self.params['W1'],self.params['b1'])
+        cache_list.append(temp_cache)
+        for i in range(1,self.num_layers):
+          temp_out, temp_cache = layer_list[i].forward(temp_out,self.params[w_name_list[i]],
+                                                       self.params[b_name_list[i]])
+          cache_list.append(temp_cache)
+        #res_out, res_cache = layer2.forward(out1,self.params['W2'],self.params['b2'])
+        #print("Out2:",out2)
+        scores = temp_out.detach()
         #################################################################
         #                      END OF YOUR CODE                         #
         #################################################################
@@ -442,7 +478,27 @@ class FullyConnectedNet(object):
         # the gradient.                                                     #
         #####################################################################
         # Replace "pass" statement with your code
-        pass
+        loss_wo_L2, grad = softmax_loss(temp_out,y)
+        reg_loss = 0
+        for i in range(self.num_layers):
+            reg_loss += torch.sum(torch.square(self.params[w_name_list[i]]))
+        loss = loss_wo_L2 + 0.5 * self.reg * reg_loss
+
+        # start back propagation
+        #temp_dw, temp_dx, temp_db = None
+        temp_dx, temp_dw, temp_db =layer_list[-1].backward(grad,cache_list[-1])
+        grads[b_name_list[-1]] = temp_db
+        grads[w_name_list[-1]] = temp_dw + self.reg * self.params[w_name_list[-1]]
+        for i in range(self.num_layers-2,-1,-1):
+            temp_dx, temp_dw, temp_db =layer_list[i].backward(temp_dx,cache_list[i])
+            grads[b_name_list[i]] = temp_db
+            grads[w_name_list[i]] = temp_dw + self.reg * self.params[w_name_list[i]]
+
+        # dx1,dw1,db1 =layer1.backward(dx2,cache1)
+        # grads['W2'] = dw2 + 2* self.reg * self.params['W2']
+        # grads['W1'] = dw1 + 2* self.reg * self.params['W1']
+        # grads['b1'] = db1
+        # grads['b2'] = db2
         ###########################################################
         #                   END OF YOUR CODE                      #
         ###########################################################
@@ -487,8 +543,8 @@ def get_three_layer_network_params():
     # TODO: Change weight_scale and learning_rate so your         #
     # model achieves 100% training accuracy within 20 epochs.     #
     ###############################################################
-    weight_scale = 1e-2   # Experiment with this!
-    learning_rate = 1e-4  # Experiment with this!
+    weight_scale = 0.09   # Experiment with this!
+    learning_rate = 0.11  # Experiment with this!
     # Replace "pass" statement with your code
     pass
     ################################################################
