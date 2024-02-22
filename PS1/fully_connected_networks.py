@@ -558,8 +558,8 @@ def get_five_layer_network_params():
     # TODO: Change weight_scale and learning_rate so your          #
     # model achieves 100% training accuracy within 20 epochs.      #
     ################################################################
-    learning_rate = 2e-3  # Experiment with this!
-    weight_scale = 1e-5   # Experiment with this!
+    learning_rate = 0.09 # Experiment with this!
+    weight_scale = 0.12   # Experiment with this!
     # Replace "pass" statement with your code
     pass
     ################################################################
