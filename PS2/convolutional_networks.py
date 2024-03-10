@@ -73,8 +73,16 @@ class Conv(object):
                     for sw in range(Wout):
                         out[i,j,sh,sw] =torch.sum(pad_input[i,:,sh * stride:sh * stride+HH,sw * stride:sw * stride+WW] * w[j])
                 out[i,j,:,:] +=b[j]
-            # ou
-            # t +=b
+        # for i in range(N):
+        #     for j in range(F):
+        #         out[i,j,:,:] +=b[j]
+        #         for hh in range(HH):
+        #             for ww in range(WW):
+        #                 end_idx_h = hh+(Hout-1)*stride + 2*pad
+        #                 end_idx_w = ww+(Wout-1)*stride + 2*pad
+        #                 #print((w[j,:,hh,ww].view(C,1,1) @ pad_input[i,:,hh:hh+Hout:stride,ww:ww+Wout:stride].view(C,Hout,Wout)).shape)
+        #                 out[i,j,:,:] += torch.sum(w[j,:,hh,ww].view(C,1,1) * pad_input[i,:,hh:end_idx_h:stride,ww:end_idx_w:stride].view(C,Hout,Wout),dim=0 )
+                
         #####################################################################
         #                          END OF YOUR CODE                         #
         #####################################################################
@@ -115,13 +123,18 @@ class Conv(object):
         for i in range(N):
             for j in range(F):
                 db[j] += torch.sum(dout[i,j,:,:])
-                for sh in range(Hout):
-                    for sw in range(Wout):
-                        dw[j] +=pad_input[i,:,sh * stride:sh * stride+HH,sw * stride:sw * stride+WW] * dout[i,j,sh,sw]
-                        dxtemp = w[j] * dout[i, j, sh, sw]
-                        dx[i,:,sh * stride:sh * stride+HH,sw * stride:sw * stride+WW] += dxtemp
+                for hh in range(HH):
+                    for ww in range(WW):
+                        end_idx_h = hh+H+2*pad-HH+1
+                        end_idx_w = ww+W-WW+2*pad+1
+                        # print(dx[i,:,hh:end_idx_h:stride,ww:end_idx_w:stride].shape)
+                        # print((w[j,:,hh,ww].view(C,1,1) * (dout[i, j, :, :].view(1,Hout,Wout))).shape)
+                        # print((w[j,:,hh,ww].view(C,1,1) * (dout[i, j, :, :].view(1,Hout,Wout))).shape)
+                        # print(dx[i,:,hh:hh+(Hout-1)*stride:stride,ww:ww+(Wout-1)*stride:stride].shape)
+                        dx[i,:,hh:end_idx_h:stride,ww:end_idx_w:stride] += w[j,:,hh,ww].view(C,1,1) * (dout[i, j, :, :].view(1,Hout,Wout))
+                        dw[j,:,hh,ww] +=torch.sum(pad_input[i,:,hh:end_idx_h:stride,ww:end_idx_w:stride] * (dout[i,j,:,:]),dim = (1,2))
         dx = dx[:,:,pad:-pad,pad:-pad]
-                        
+
         ###############################################################
         #                       END OF YOUR CODE                      #
         ###############################################################
@@ -154,7 +167,19 @@ class MaxPool(object):
         # TODO: Implement the max-pooling forward pass                     #
         ####################################################################
         # Replace "pass" statement with your code
-        pass
+        N, C, H, W = x.shape
+        HH = pool_param['pool_height']
+        WW = pool_param['pool_width']
+        stride = pool_param['stride']
+        Hout = int(1 + (H - HH) / stride)
+        Wout = int(1 + (W - WW) / stride)
+        out = torch.zeros(N,C,Hout,Wout, device=x.device,dtype=x.dtype)
+        for i in range(N):
+            for j in range(C):
+                for sh in range(Hout):
+                    for sw in range(Wout):
+                        out[i,j,sh,sw] =torch.max(x[i,j,sh * stride:sh * stride+HH,sw * stride:sw * stride+WW])
+      
         ####################################################################
         #                         END OF YOUR CODE                         #
         ####################################################################
@@ -176,7 +201,22 @@ class MaxPool(object):
         # TODO: Implement the max-pooling backward pass                     #
         #####################################################################
         # Replace "pass" statement with your code
-        pass
+        x, pool_param = cache
+        N, C, H, W = x.shape
+        HH = pool_param['pool_height']
+        WW = pool_param['pool_width']
+        stride = pool_param['stride']
+        Hout = int(1 + (H - HH) / stride)
+        Wout = int(1 + (W - WW) / stride)
+        dx = torch.zeros(N,C,H,W, device=x.device,dtype=x.dtype)
+        for i in range(N):
+            for j in range(C):
+                for sh in range(Hout):
+                    for sw in range(Wout):
+                        dim_idx = torch.argmax(x[i,j,sh * stride:sh * stride+HH,sw * stride:sw * stride+WW])
+                        idx_x = int(dim_idx/WW)
+                        idx_y = dim_idx%WW
+                        dx[i,j,sh*stride+idx_x,sw*stride+idx_y] = dout[i,j,sh,sw]
         ####################################################################
         #                          END OF YOUR CODE                        #
         ####################################################################
