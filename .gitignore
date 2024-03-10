@@ -5,3 +5,8 @@ PS1/cs639/__pycache__
 PS1/softmax_best_model.pt
 PS1/best_two_layer_net.pth
 PS1/best_overfit_five_layer_net.pth
+PS2/__pycache__
+PS2/cifar-10-batches-py
+PS2/cs639/__pycache__
+PS2/cifar-10-python.tar.gz
+subconvForward.txt
