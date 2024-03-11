@@ -10,3 +10,4 @@ PS2/cifar-10-batches-py
 PS2/cs639/__pycache__
 PS2/cifar-10-python.tar.gz
 subconvForward.txt
+.vscode/settings.json

@@ -279,7 +279,13 @@ class ThreeLayerConvNet(object):
         # look at the start of the loss() function to see how that happens.  #
         ######################################################################
         # Replace "pass" statement with your code
-        pass
+        C, H, W = input_dims
+        self.params['W1'] = weight_scale * torch.randn(size=(num_filters,C, filter_size, filter_size),dtype=dtype,device=device)
+        self.params['b1'] = torch.zeros(num_filters,dtype=dtype).to(device)
+        self.params['W2'] = weight_scale * torch.randn(size=(H*W*num_filters//4,hidden_dim),dtype=dtype,device=device)
+        self.params['b2'] = torch.zeros(hidden_dim,dtype=dtype).to(device)
+        self.params['W3'] = weight_scale * torch.randn(size=(hidden_dim,num_classes),dtype=dtype,device=device)
+        self.params['b3'] = torch.zeros(num_classes,dtype=dtype).to(device)
         ######################################################################
         #                            END OF YOUR CODE                        #
         ######################################################################
@@ -328,7 +334,13 @@ class ThreeLayerConvNet(object):
         # above                                                              #
         ######################################################################
         # Replace "pass" statement with your code
-        pass
+        layer1 = Conv_ReLU_Pool()
+        out1,cache1 = layer1.forward(X,W1,b1,conv_param=conv_param,pool_param=pool_param)
+        layer2 = Linear_ReLU()
+        out2,cache2 = layer2.forward(out1,W2,b2)
+        layer3 = Linear()
+        out3,cache3 = layer3.forward(out2,W3,b3)
+        scores = out3.detach()
         ######################################################################
         #                             END OF YOUR CODE                       #
         ######################################################################
@@ -349,7 +361,21 @@ class ThreeLayerConvNet(object):
         # does not include a factor of 0.5                                 #
         ####################################################################
         # Replace "pass" statement with your code
-        pass
+        loss_wo_L2, grad = softmax_loss(out3,y)
+        loss = loss_wo_L2 + self.reg * (torch.sum(torch.square(self.params['W1']))
+                                        +torch.sum(torch.square(self.params['W2'])) 
+                                        + torch.sum(torch.square(self.params['W3'])))
+        dx3,dw3,db3 =layer3.backward(grad,cache3)
+
+        dx2,dw2,db2 =layer2.backward(dx3,cache2)
+        
+        dx1,dw1,db1 =layer1.backward(dx2,cache1)
+        grads['W3'] = dw3 + 2* self.reg * self.params['W3']
+        grads['W2'] = dw2 + 2* self.reg * self.params['W2']
+        grads['W1'] = dw1 + 2* self.reg * self.params['W1']
+        grads['b1'] = db1
+        grads['b2'] = db2
+        grads['b3'] = db3
         ###################################################################
         #                             END OF YOUR CODE                    #
         ###################################################################
@@ -433,7 +459,25 @@ class DeepConvNet(object):
         # initilized to ones and zeros respectively.                        #
         #####################################################################
         # Replace "pass" statement with your code
-        pass
+        weight_name_list = ['W'+ str(i) for i in range(1,self.num_layers+1)]
+        bias_name_list = ['b'+ str(i) for i in range(1,self.num_layers+1)]
+
+        # initialize hidden layers
+        C, H, W = input_dims
+        image_size_H = H 
+        image_size_W = W
+        for i in range(0,self.num_layers-1):
+            
+            self.params[weight_name_list[i]] = weight_scale * torch.randn(size=(num_filters[i],C,image_size_H,image_size_W),
+                                                                        dtype=dtype,device=device)
+            self.params[bias_name_list[i]] = torch.zeros(num_filters[i],dtype=dtype,device=device)
+            if(i in self.max_pools):
+                image_size_H = image_size_H//2
+                image_size_W = image_size_W//2
+
+        # initialize the last linear layer
+        self.params[weight_name_list[self.num_layers-1]] = weight_scale * torch.randn(size=(image_size_H*image_size_W*num_filters[-1],num_classes),dtype=dtype,device=device)
+        self.params[bias_name_list[self.num_layers-1]] = torch.zeros(num_classes,dtype=dtype,device=device)
         ################################################################
         #                      END OF YOUR CODE                        #
         ################################################################
@@ -540,7 +584,29 @@ class DeepConvNet(object):
         # layers, to simplify your implementation.              #
         #########################################################
         # Replace "pass" statement with your code
-        pass
+        w_name_list = ['W'+ str(i) for i in range(1,self.num_layers+1)]
+        b_name_list = ['b'+ str(i) for i in range(1,self.num_layers+1)]
+
+        layer_list = []
+        for i in range(self.num_layers-1):
+            if(i in self.max_pools):
+                layer_list.append(Conv_BatchNorm_ReLU_Pool())
+            else:
+                layer_list.append(Conv_BatchNorm_ReLU())
+        layer_list.append(Linear())
+        temp_out = None
+        cache_list = []
+        temp_cache = None
+
+        temp_out, temp_cache = layer_list[0].forward(X,self.params['W1'],self.params['b1'])
+        cache_list.append(temp_cache)
+
+        for i in range(1,self.num_layers):
+            temp_out, temp_cache = layer_list[i].forward(temp_out,self.params[w_name_list[i]],
+                                                        self.params[b_name_list[i]])
+            cache_list.append(temp_cache)
+        scores = temp_out.detach()
+
         #####################################################
         #                 END OF YOUR CODE                  #
         #####################################################
@@ -561,7 +627,20 @@ class DeepConvNet(object):
         # does not include a factor of 0.5                                #
         ###################################################################
         # Replace "pass" statement with your code
-        pass
+        loss_wo_L2, grad = softmax_loss(temp_out,y)
+        reg_loss = 0
+        for i in range(self.num_layers):
+            reg_loss += torch.sum(torch.square(self.params[w_name_list[i]]))
+        loss = loss_wo_L2 + 2* self.reg * reg_loss
+
+        temp_dx, temp_dw, temp_db =layer_list[-1].backward(grad,cache_list[-1])
+        grads[b_name_list[-1]] = temp_db
+        grads[w_name_list[-1]] = temp_dw + self.reg * self.params[w_name_list[-1]]
+        for i in range(self.num_layers-2,-1,-1):
+            temp_dx, temp_dw, temp_db =layer_list[i].backward(temp_dx,cache_list[i])
+            grads[b_name_list[i]] = temp_db
+            grads[w_name_list[i]] = temp_dw + self.reg * self.params[w_name_list[i]]
+
         #############################################################
         #                       END OF YOUR CODE                    #
         #############################################################
@@ -634,7 +713,7 @@ def kaiming_initializer(Din, Dout, K=None, relu=True, device='cpu',
         # and device.                                                     #
         ###################################################################
         # Replace "pass" statement with your code
-        pass
+        weight = torch.sqrt(gain / Din)*torch.randn(size=(Din,Dout),device=device,dtype=dtype)
         ###################################################################
         #                            END OF YOUR CODE                     #
         ###################################################################
@@ -648,7 +727,7 @@ def kaiming_initializer(Din, Dout, K=None, relu=True, device='cpu',
         # and device.                                                     #
         ###################################################################
         # Replace "pass" statement with your code
-        pass
+        weight = torch.sqrt(gain / Din)*torch.randn(size=(Din,Dout,K,K),device=device,dtype=dtype)
         ###################################################################
         #                         END OF YOUR CODE                        #
         ###################################################################
