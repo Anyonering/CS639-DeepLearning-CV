@@ -471,6 +471,9 @@ class DeepConvNet(object):
         else:
             self.params[weight_name_list[0]] = weight_scale * torch.randn(size=(num_filters[0],C,3,3),dtype=dtype,device=device)
         self.params[bias_name_list[0]] = torch.zeros(num_filters[0],dtype=dtype,device=device)
+        if batchnorm == True:
+          self.params['gamma1'] = torch.ones(num_filters[0], device=device, dtype=dtype)
+          self.params['beta1'] = torch.zeros(num_filters[0], device=device, dtype=dtype)  
         if(0 in self.max_pools):
             image_size_H = image_size_H//2
             image_size_W = image_size_W//2
@@ -480,6 +483,9 @@ class DeepConvNet(object):
             else:
                 self.params[weight_name_list[i]] = weight_scale * torch.randn(size=(num_filters[i],num_filters[i-1],3,3),dtype=dtype,device=device)
             self.params[bias_name_list[i]] = torch.zeros(num_filters[i],dtype=dtype,device=device)
+            if batchnorm == True:
+                self.params[f'gamma{i+1}'] = torch.ones(num_filters[i], device=device, dtype=dtype)
+                self.params[f'beta{i+1}'] = torch.zeros(num_filters[i], device=device, dtype=dtype)
             if(i in self.max_pools):
                 image_size_H = image_size_H//2
                 image_size_W = image_size_W//2
@@ -617,26 +623,37 @@ class DeepConvNet(object):
         cache_list = []
         temp_cache = None
 
-        if(0 in self.max_pools):
-            temp_out, temp_cache = layer_list[0].forward(X,self.params['W1'],self.params['b1'],conv_param,pool_param)
-        else:
-            temp_out, temp_cache = layer_list[0].forward(X,self.params['W1'],self.params['b1'],conv_param)
-        cache_list.append(temp_cache)
-
-        for i in range(1,self.num_layers-1):
-            if(i in self.max_pools):
-                temp_out, temp_cache = layer_list[i].forward(temp_out,self.params[w_name_list[i]],
-                                                        self.params[b_name_list[i]],conv_param,pool_param)
+        if(not self.batchnorm):
+            if(0 in self.max_pools):
+                temp_out, temp_cache = layer_list[0].forward(X,self.params['W1'],self.params['b1'],conv_param,pool_param)
             else:
-                temp_out, temp_cache = layer_list[i].forward(temp_out,self.params[w_name_list[i]],
-                                                        self.params[b_name_list[i]],conv_param)
+                temp_out, temp_cache = layer_list[0].forward(X,self.params['W1'],self.params['b1'],conv_param)
             cache_list.append(temp_cache)
 
+            for i in range(1,self.num_layers-1):
+                if(i in self.max_pools):
+                    temp_out, temp_cache = layer_list[i].forward(temp_out,self.params[w_name_list[i]],self.params[b_name_list[i]],conv_param,pool_param)
+                else:
+                    temp_out, temp_cache = layer_list[i].forward(temp_out,self.params[w_name_list[i]],self.params[b_name_list[i]],conv_param)
+                cache_list.append(temp_cache)
+        else:
+            if(0 in self.max_pools):
+                temp_out, temp_cache = layer_list[0].forward(X,self.params['W1'],self.params['b1'],self.params['gamma1'],self.params['beta1'],conv_param,self.bn_params[0],pool_param)
+            else:
+                temp_out, temp_cache = layer_list[0].forward(X,self.params['W1'],self.params['b1'],self.params['gamma1'],self.params['beta1'],conv_param,self.bn_params[0])
+            cache_list.append(temp_cache)
+
+            for i in range(1,self.num_layers-1):
+                if(i in self.max_pools):
+                    temp_out, temp_cache = layer_list[i].forward(temp_out,self.params[w_name_list[i]],self.params[b_name_list[i]],self.params[f'gamma{i+1}'],self.params[f'beta{i+1}'],conv_param,self.bn_params[i],pool_param)
+                else:
+                    temp_out, temp_cache = layer_list[i].forward(temp_out,self.params[w_name_list[i]],self.params[b_name_list[i]],self.params[f'gamma{i+1}'],self.params[f'beta{i+1}'],conv_param,self.bn_params[i])
+                cache_list.append(temp_cache)
         if(self.num_layers-1 in self.max_pools):
-            temp_out, temp_cache = layer_list[-1].forward(temp_out,self.params[w_name_list[-1]],
+            temp_out, temp_cache = layer_list[-1].forward(temp_out.contiguous(),self.params[w_name_list[-1]],
                                                         self.params[b_name_list[-1]])
         else:
-            temp_out, temp_cache = layer_list[-1].forward(temp_out,self.params[w_name_list[-1]],
+            temp_out, temp_cache = layer_list[-1].forward(temp_out.contiguous(),self.params[w_name_list[-1]],
                                                         self.params[b_name_list[-1]])
         cache_list.append(temp_cache)
         scores = temp_out.detach()
@@ -663,17 +680,33 @@ class DeepConvNet(object):
         # Replace "pass" statement with your code
         loss_wo_L2, grad = softmax_loss(temp_out,y)
         reg_loss = 0
-        for i in range(self.num_layers):
-            reg_loss += torch.sum(torch.square(self.params[w_name_list[i]]))
-        loss = loss_wo_L2 + self.reg * reg_loss
+        if(not self.batchnorm):
+            for i in range(self.num_layers):
+                reg_loss += torch.sum(torch.square(self.params[w_name_list[i]]))
+            loss = loss_wo_L2 + self.reg * reg_loss
 
-        temp_dx, temp_dw, temp_db =layer_list[-1].backward(grad,cache_list[-1])
-        grads[b_name_list[-1]] = temp_db
-        grads[w_name_list[-1]] = temp_dw + 2 * self.reg * self.params[w_name_list[-1]]
-        for i in range(self.num_layers-2,-1,-1):
-            temp_dx, temp_dw, temp_db =layer_list[i].backward(temp_dx,cache_list[i])
-            grads[b_name_list[i]] = temp_db
-            grads[w_name_list[i]] = temp_dw + 2 * self.reg * self.params[w_name_list[i]]
+            temp_dx, temp_dw, temp_db =layer_list[-1].backward(grad,cache_list[-1])
+            grads[b_name_list[-1]] = temp_db
+            grads[w_name_list[-1]] = temp_dw + 2 * self.reg * self.params[w_name_list[-1]]
+            for i in range(self.num_layers-2,-1,-1):
+                temp_dx, temp_dw, temp_db =layer_list[i].backward(temp_dx,cache_list[i])
+                grads[b_name_list[i]] = temp_db
+                grads[w_name_list[i]] = temp_dw + 2 * self.reg * self.params[w_name_list[i]]
+        else:
+            for i in range(self.num_layers):
+                reg_loss += torch.sum(torch.square(self.params[w_name_list[i]]))
+            loss = loss_wo_L2 + self.reg * reg_loss
+
+            temp_dx, temp_dw, temp_db =layer_list[-1].backward(grad,cache_list[-1])
+            grads[b_name_list[-1]] = temp_db
+            grads[w_name_list[-1]] = temp_dw + 2 * self.reg * self.params[w_name_list[-1]]
+            
+            for i in range(self.num_layers-2,-1,-1):
+                temp_dx, temp_dw, temp_db,temp_dgamma, temp_dbeta =layer_list[i].backward(temp_dx,cache_list[i])
+                grads[f'gamma{i+1}'] = temp_dgamma
+                grads[f'beta{i+1}'] = temp_dbeta
+                grads[b_name_list[i]] = temp_db
+                grads[w_name_list[i]] = temp_dw + 2 * self.reg * self.params[w_name_list[i]]
 
         #############################################################
         #                       END OF YOUR CODE                    #
@@ -878,7 +911,19 @@ class BatchNorm(object):
             # (https://arxiv.org/abs/1502.03167) might prove to be helpful.  #
             ##################################################################
             # Replace "pass" statement with your code
-            pass
+            sample_mean = torch.mean(x,dim=0)
+            sample_var = torch.var(x,dim=0,correction=0)
+            # print(D)
+            # print(running_mean.shape," running mean shape")
+            # print(sample_mean.shape," sample mean shape")
+            running_mean = momentum * running_mean + (1 - momentum) * sample_mean
+            
+            running_var = momentum * running_var + (1 - momentum) * sample_var
+            x_top = x-sample_mean
+            sqrt_v = (torch.sqrt(sample_var + eps))
+            x_intermediate = x_top/sqrt_v
+            out = gamma * x_intermediate +beta 
+            cache = (x_intermediate,x_top,sqrt_v,gamma)
             ################################################################
             #                           END OF YOUR CODE                   #
             ################################################################
@@ -891,7 +936,8 @@ class BatchNorm(object):
             # in the out variable.                                         #
             ################################################################
             # Replace "pass" statement with your code
-            pass
+            x_intermediate = (x-running_mean)/(torch.sqrt(running_var + eps))
+            out = x_intermediate *gamma +beta 
             ################################################################
             #                      END OF YOUR CODE                        #
             ################################################################
@@ -933,7 +979,22 @@ class BatchNorm(object):
         # Don't forget to implement train and test mode separately.         #
         #####################################################################
         # Replace "pass" statement with your code
-        pass
+        N,D = dout.shape
+        x_intermediate,x_top,sqrt_v, gamma = cache
+        dbeta = torch.sum(dout,0)
+        dgamma = torch.sum(x_intermediate * dout,0)
+        dx_intermediate = dout * gamma
+        dsqrt_vi = torch.sum(dx_intermediate * x_top,0)
+        dxmu1 = dx_intermediate / sqrt_v
+        dsqrtvar = -1/ (torch.square(sqrt_v)) * dsqrt_vi
+        dvar = 0.5 * 1 /sqrt_v * dsqrtvar
+        dxmu2 = 2 * x_top * 1 /N * torch.ones((N,D),dtype=dout.dtype,device=dout.device) * dvar
+        dx1 = (dxmu1 + dxmu2)
+        dmu = -1 * torch.sum(dx1, 0)
+
+        dx2 = 1. /N * torch.ones((N,D),dtype=dout.dtype,device=dout.device) * dmu
+        dx = dx1 + dx2
+        
         #################################################################
         #                      END OF YOUR CODE                         #
         #################################################################
@@ -982,7 +1043,10 @@ class SpatialBatchNorm(object):
         # ours is less than five lines.                                #
         ################################################################
         # Replace "pass" statement with your code
-        pass
+        N, C, H, W = x.shape
+        x = torch.permute(x,(0,2,3,1)).reshape(N*H*W,C).contiguous()
+        out, cache = BatchNorm.forward(x, gamma, beta, bn_param) 
+        out = out.reshape(N, H, W,C ).permute((0,3,1,2)).contiguous()
         ################################################################
         #                       END OF YOUR CODE                       #
         ################################################################
@@ -1013,7 +1077,10 @@ class SpatialBatchNorm(object):
         # ours is less than five lines.                                 #
         #################################################################
         # Replace "pass" statement with your code
-        pass
+        N, C, H, W = dout.shape
+        dout = torch.permute(dout,(0,2,3,1)).reshape(N*H*W,C).contiguous()
+        dx, dgamma, dbeta = BatchNorm.backward(dout, cache)
+        dx = dx.reshape(N, H, W, C).permute((0,3,1,2)).contiguous()
         ##################################################################
         #                       END OF YOUR CODE                         #
         ##################################################################
