@@ -11,3 +11,5 @@ PS2/cs639/__pycache__
 PS2/cifar-10-python.tar.gz
 subconvForward.txt
 .vscode/settings.json
+PS2/one_minute_deepconvnet.pth
+PS2/overfit_deepconvnet.pth
