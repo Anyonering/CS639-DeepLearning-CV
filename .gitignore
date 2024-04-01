@@ -14,3 +14,10 @@ subconvForward.txt
 PS2/one_minute_deepconvnet.pth
 PS2/overfit_deepconvnet.pth
 PS2/Anyong_Haoyang_PS2.zip
+PS3/VOCdevkit/VOC2007
+PS3/__pycache__
+PS3/cs639/__pycache__
+PS3/VOCtrainval_06-Nov-2007.tar
+PS3/voc07_train.json
+PS3/voc07_val.json
+PS3/.vscode
