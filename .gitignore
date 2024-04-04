@@ -22,3 +22,6 @@ PS3/voc07_train.json
 PS3/voc07_val.json
 PS3/.vscode
 PS3/fcos_detector.pt
+PS3/mAP
+PS3/fcos_detector_22acc.pt
+PS3/fcos_detector_for_submit.pt
