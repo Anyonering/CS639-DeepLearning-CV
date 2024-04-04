@@ -21,3 +21,4 @@ PS3/VOCtrainval_06-Nov-2007.tar
 PS3/voc07_train.json
 PS3/voc07_val.json
 PS3/.vscode
+PS3/fcos_detector.pt

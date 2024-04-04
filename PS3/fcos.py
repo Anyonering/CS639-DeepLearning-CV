@@ -210,13 +210,19 @@ def get_fpn_location_coords(
         # TODO: Implement logic to get location co-ordinates below.          #
         ######################################################################
         # Replace "PASS" statement with your code
+        # B, C, H, W = feat_shape
+        # result_coord = torch.empty((H*W,2), dtype=dtype,device="cpu")
+        # for i in range(H):
+        #     for j in range(W):
+        #         result_coord[i*W+j,0]=level_stride*(i+0.5)
+        #         result_coord[i*W+j,1]=level_stride*(j+0.5)
+        # location_coords[level_name] = result_coord.to(device)
         B, C, H, W = feat_shape
-        result_coord = torch.empty((H*W,2), dtype=dtype,device="cpu")
-        for i in range(H):
-            for j in range(W):
-                result_coord[i*W+j,0]=level_stride*(i+0.5)
-                result_coord[i*W+j,1]=level_stride*(j+0.5)
-        location_coords[level_name] = result_coord.to(device)
+        loc1 = torch.repeat_interleave(torch.arange(H, dtype=dtype,device=device),W)
+        loc1 = level_stride *(loc1 +0.5)
+        loc2 = torch.arange(W, dtype=dtype,device=device).repeat(H).view(-1)
+        loc2 = level_stride *(loc2 +0.5)
+        location_coords[level_name] = torch.stack((loc1,loc2), dim = 1)
         ######################################################################
         #                             END OF YOUR CODE                       #
         ######################################################################
@@ -255,7 +261,33 @@ def nms(boxes: torch.Tensor, scores: torch.Tensor, iou_threshold: float = 0.5):
     # github.com/pytorch/vision/blob/main/torchvision/csrc/ops/cpu/nms_kernel.cpp
     #############################################################################
     # Replace "PASS" statement with your code
-    pass
+    keep = []
+    N = scores.shape[0]
+    suppressed = torch.zeros(N,dtype=torch.int64,device='cpu')
+    sorted, indices = torch.sort(scores,descending=True)
+    for i in range(N):
+        if(suppressed[indices[i]]==1):
+            continue
+        chosen_index = indices[i]
+        x1,y1,x2,y2 = boxes[chosen_index]
+        keep.append(chosen_index)
+        suppressed[chosen_index] = 1
+        # eliminate all boxed with IoU > threshold
+        for j in range(i+1,N):
+            if(suppressed[indices[j]]>0):
+                continue
+            compare_x1,compare_y1,compare_x2,compare_y2 = boxes[indices[j]]
+            intersect_x = compare_x1<x2 and compare_x2>x1
+            intersect_y = compare_y1<y2 and compare_y2>y1
+            intersect = intersect_x and intersect_y
+            if(not intersect):
+                continue
+
+            intersect_area = (min(x2,compare_x2)-max(x1,compare_x1))*(min(y2,compare_y2)-max(y1,compare_y1))
+            union_area = (x2-x1)*(y2-y1)+(compare_x2-compare_x1)*(compare_y2-compare_y1)-intersect_area
+            if(intersect_area/union_area > iou_threshold):
+                suppressed[indices[j]] = 1
+    keep = torch.Tensor(keep).long().to(boxes.device)
     #############################################################################
     #                              END OF YOUR CODE                             #
     #############################################################################
@@ -581,20 +613,25 @@ def fcos_get_deltas_from_locations(
     deltas = None
 
     # Replace "PASS" statement with your code
+    # N, loc_shape = locations.shape
+    # deltas = torch.empty((N,4),dtype=gt_boxes.dtype,device='cpu')
+    # for i in range(N):
+    #     if(gt_boxes[i][0]==-1 and gt_boxes[i][1]==-1 and gt_boxes[i][2]==-1 and gt_boxes[i][3]==-1):
+    #         # this is background
+    #         deltas[i]=gt_boxes[i][:4]
+    #     else:
+    #         xc,yc = locations[i]
+    #         x1, y1, x2, y2 = gt_boxes[i][:4]
+    #         deltas[i][0] = (xc - x1)/stride
+    #         deltas[i][1] = (yc - y1)/stride
+    #         deltas[i][2] = (x2 - xc)/stride
+    #         deltas[i][3] = (y2 - yc)/stride
+    # deltas = deltas.to(gt_boxes.device)
     N, loc_shape = locations.shape
-    deltas = torch.empty((N,4),dtype=gt_boxes.dtype,device='cpu')
-    for i in range(N):
-        if(gt_boxes[i][0]==-1 and gt_boxes[i][1]==-1 and gt_boxes[i][2]==-1 and gt_boxes[i][3]==-1):
-            # this is background
-            deltas[i]=gt_boxes[i][:4]
-        else:
-            xc,yc = locations[i]
-            x1, y1, x2, y2 = gt_boxes[i][:4]
-            deltas[i][0] = (xc - x1)/stride
-            deltas[i][1] = (yc - y1)/stride
-            deltas[i][2] = (x2 - xc)/stride
-            deltas[i][3] = (y2 - yc)/stride
-    deltas = deltas.to(gt_boxes.device)
+    deltas = torch.empty((N,4),dtype=gt_boxes.dtype,device=gt_boxes.device)
+    deltas[:,:2] = (locations[:,:2]-gt_boxes[:,:2])/stride
+    deltas[:,2:4] = (gt_boxes[:,2:4]-locations[:,:2])/stride
+    deltas[gt_boxes[:,:4] == -1] = -1
 
     ##########################################################################
     #                             END OF YOUR CODE                           #
@@ -638,21 +675,32 @@ def fcos_apply_deltas_to_locations(
     ##########################################################################
     output_boxes = None
     # Replace "PASS" statement with your code
-    N, loc_shape = locations.shape
 
-    output_boxes = torch.empty((N,4),dtype=deltas.dtype,device='cpu')
-    for i in range(N):
-        if(deltas[i][0]==-1 and deltas[i][1]==-1 and deltas[i][2]==-1 and deltas[i][3]==-1):
-            # this is background
-            output_boxes[i]=deltas[i]
-        else:
-            xc,yc = locations[i]
-            l, t, r, b = deltas[i]
-            output_boxes[i][0] = -(l * stride - xc)
-            output_boxes[i][1] = -(t * stride - yc)
-            output_boxes[i][2] = (r * stride + xc)
-            output_boxes[i][3] = (b * stride + yc)
-    output_boxes = output_boxes.to(locations.device)
+    # N, loc_shape = locations.shape
+    # output_boxes = torch.empty((N,4),dtype=deltas.dtype,device='cpu')
+    # for i in range(N):
+    #     if(deltas[i][0]==-1 and deltas[i][1]==-1 and deltas[i][2]==-1 and deltas[i][3]==-1):
+    #         # this is background
+    #         output_boxes[i]=deltas[i]
+    #     else:
+    #         xc,yc = locations[i]
+    #         l, t, r, b = deltas[i]
+    #         output_boxes[i][0] = -(l * stride - xc)
+    #         output_boxes[i][1] = -(t * stride - yc)
+    #         output_boxes[i][2] = (r * stride + xc)
+    #         output_boxes[i][3] = (b * stride + yc)
+    # output_boxes = output_boxes.to(locations.device)
+    N, loc_shape = locations.shape
+    output_boxes = torch.empty((N,4),dtype=deltas.dtype,device=locations.device)
+    output_boxes[:,:2] = (locations[:,:2]-deltas[:,:2]*stride)
+    output_boxes[:,2:4] = (deltas[:,2:4]*stride+locations[:,:2])
+    
+    mask = output_boxes[deltas[:,:4] == -1] # = locations[:,:2]
+    # print(mask)
+    output_boxes[deltas[:,:4] == -1] = torch.stack((locations[deltas[:,:2] == -1].reshape(-1,2),locations[deltas[:,:2] == -1].reshape(-1,2)),dim=1).reshape(mask.shape)
+    
+    # torch.cat((locations[deltas[:,:2] == -1].reshape(-1,2),locations[deltas[:,:2] == -1].reshape(-1,2)),1)
+    output_boxes[output_boxes<0] = 0
     
     ##########################################################################
     #                             END OF YOUR CODE                           #
@@ -688,10 +736,15 @@ def fcos_make_centerness_targets(deltas: torch.Tensor):
     centerness = torch.empty(N,dtype=deltas.dtype,device=deltas.device)
     
     centerness[:] = torch.sqrt(torch.min(deltas[:,::2],dim=1)[0]*torch.min(deltas[:,1::2],dim=1)[0]/(torch.max(deltas[:,::2],dim=1)[0]*torch.max(deltas[:,1::2],dim=1)[0]))
-    for i in range(N):
-        if(deltas[i][0]==-1 and deltas[i][1]==-1 and deltas[i][2]==-1 and deltas[i][3]==-1):
-            # this is background
-            centerness[i]=-1
+    # for i in range(N):
+    #     if(deltas[i][0]==-1 and deltas[i][1]==-1 and deltas[i][2]==-1 and deltas[i][3]==-1):
+    #         # this is background
+    #         centerness[i]=-1
+    # centerness[torch.max(deltas[:,:4],dim=1)[0]==-1 and torch.min(deltas[:,:4],dim=1)[0]==-1] = -1
+    centerness[torch.max(deltas[:,:4],dim=1)[0]==-1] = -1
+    # mask = centerness[torch.max(deltas[:,:4],dim=1)==-1 ]
+    # print(torch.max(deltas[:,:4],dim=1)[0])
+    #print(mask)
     ##########################################################################
     #                             END OF YOUR CODE                           #
     ##########################################################################
