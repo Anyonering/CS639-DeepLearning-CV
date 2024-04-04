@@ -1018,19 +1018,48 @@ class FCOS(nn.Module):
             )
             # Step 1:
             # Replace "PASS" statement with your code
-            pass
+            
+            # print(level_pred_scores)
+            print(level_ctr_logits.sigmoid_())
+            # level_pred_scores, classes_indices = torch.max(torch.sqrt(
+            #     level_cls_logits.sigmoid_() * level_ctr_logits.sigmoid_()
+            # ),dim=-1)
+            # print(level_pred_scores.shape)
+            # print(level_pred_scores)
+            # print(classes_indices)
+            # print(torch.max(level_ctr_logits,dim=-1))
+            # level_pred_classes = classes_indices.view(-1)
+            # print(level_pred_classes.shape)
+            # print(level_pred_scores.shape)
+            level_pred_boxes = fcos_apply_deltas_to_locations(level_deltas, level_locations,self.backbone.fpn_strides[level_name])
+
+            original_shape = level_pred_boxes.shape
+            print("original:",original_shape)
 
             # Step 2:
             # Replace "PASS" statement with your code
-            pass
 
+            # mask = level_pred_scores[level_pred_scores>test_score_thresh]
+            # print(level_pred_boxes.shape)
+            mask = level_pred_scores.ge(test_score_thresh)
+            # print(mask)
+            level_pred_scores = torch.masked_select(level_pred_scores, mask)
+            # level_pred_classes = level_pred_classes[level_pred_scores>test_score_thresh]
+            level_pred_classes = torch.masked_select(level_pred_classes, mask)
+            level_pred_boxes = torch.masked_select(level_pred_boxes, mask.repeat_interleave(4).reshape(level_pred_boxes.shape))
+            
             # Step 3:
             # Replace "PASS" statement with your code
             pass
 
             # Step 4: Use `images` to get (height, width) for clipping.
             # Replace "PASS" statement with your code
-            pass
+            height = images.shape[-2]
+            width = images.shape[-1]
+            level_pred_boxes = level_pred_boxes.reshape(original_shape)
+            level_pred_boxes[:,0:2] = torch.maximum(level_pred_boxes[:,0:2],torch.zeros_like(level_pred_boxes[:,0:2]))
+            level_pred_boxes[:,2] = torch.minimum(level_pred_boxes[:,2],torch.full(level_pred_boxes[:,2].shape, width,device=level_pred_boxes.device))
+            level_pred_boxes[:,3] = torch.minimum(level_pred_boxes[:,3],torch.full(level_pred_boxes[:,3].shape, height,device=level_pred_boxes.device))
             ##################################################################
             #                          END OF YOUR CODE                      #
             ##################################################################
