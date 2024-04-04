@@ -260,71 +260,35 @@ def nms(boxes: torch.Tensor, scores: torch.Tensor, iou_threshold: float = 0.5):
     # github.com/pytorch/vision/blob/main/torchvision/csrc/ops/cpu/nms_kernel.cpp
     #############################################################################
     # Replace "PASS" statement with your code
-    # keep = []
-    # N = scores.shape[0]
-    # suppressed = torch.zeros(N,dtype=torch.int64,device='cpu')
-    # sorted, indices = torch.sort(scores,descending=True)
-    # for i in range(N):
-    #     if(suppressed[indices[i]]==1):
-    #         continue
-    #     chosen_index = indices[i]
-    #     x1,y1,x2,y2 = boxes[chosen_index]
-    #     keep.append(chosen_index)
-    #     suppressed[chosen_index] = 1
-    #     # eliminate all boxed with IoU > threshold
-    #     for j in range(i+1,N):
-    #         if(suppressed[indices[j]]>0):
-    #             continue
-    #         compare_x1,compare_y1,compare_x2,compare_y2 = boxes[indices[j]]
-    #         intersect_x = compare_x1<x2 and compare_x2>x1
-    #         intersect_y = compare_y1<y2 and compare_y2>y1
-    #         intersect = intersect_x and intersect_y
-    #         if(not intersect):
-    #             continue
-
-    #         intersect_area = (min(x2,compare_x2)-max(x1,compare_x1))*(min(y2,compare_y2)-max(y1,compare_y1))
-    #         union_area = (x2-x1)*(y2-y1)+(compare_x2-compare_x1)*(compare_y2-compare_y1)-intersect_area
-    #         if(intersect_area/union_area > iou_threshold):
-    #             suppressed[indices[j]] = 1
-    # keep = torch.Tensor(keep).long().to(boxes.device)
-
-
-
-    x1, y1, x2, y2 = boxes[:,0], boxes[:,1], boxes[:,2], boxes[:,3]
-    areas = (x2-x1)*(y2-y1)
-    _, _boxes = scores.sort(0, descending=True)
-
     keep = []
+    N = scores.shape[0]
+    suppressed = torch.zeros(N,dtype=torch.int64,device='cpu')
+    sorted, indices = torch.sort(scores,descending=True)
+    for i in range(N):
+        if(suppressed[indices[i]]==1):
+            continue
+        chosen_index = indices[i]
+        x1,y1,x2,y2 = boxes[chosen_index]
+        keep.append(chosen_index)
+        suppressed[chosen_index] = 1
+        # eliminate all boxed with IoU > threshold
+        for j in range(i+1,N):
+            if(suppressed[indices[j]]>0):
+                continue
+            compare_x1,compare_y1,compare_x2,compare_y2 = boxes[indices[j]]
+            intersect_x = compare_x1<x2 and compare_x2>x1
+            intersect_y = compare_y1<y2 and compare_y2>y1
+            intersect = intersect_x and intersect_y
+            if(not intersect):
+                continue
 
-    while _boxes.numel() > 0:
-        if _boxes.numel() == 1:
-            i = _boxes.item()
-            keep.append(i)
-            break
-        else:
-            i = _boxes[0].item()
-            keep.append(i)
+            intersect_area = (min(x2,compare_x2)-max(x1,compare_x1))*(min(y2,compare_y2)-max(y1,compare_y1))
+            union_area = (x2-x1)*(y2-y1)+(compare_x2-compare_x1)*(compare_y2-compare_y1)-intersect_area
+            if(intersect_area/union_area > iou_threshold):
+                suppressed[indices[j]] = 1
+    keep = torch.Tensor(keep).long().to(boxes.device)
 
-        xx1 = torch.max(x1[_boxes[1:]], x1[i])
-        yy1 = torch.max(y1[_boxes[1:]], y1[i])
-        xx2 = torch.min(x2[_boxes[1:]], x2[i])
-        yy2 = torch.min(y2[_boxes[1:]], y2[i])
-
-        # side1 = torch.min(torch.tensor(0), xx2-xx1)
-        # side2 = torch.min(torch.tensor(0), yy2-yy1)
-        side1 = (xx2-xx1).clamp(min=0)
-        side2 = (yy2-yy1).clamp(min=0)
-
-        test = (xx2-xx1).clamp(min=0)
-        intersection = side1 * side2
-
-        Union = (areas[i]+areas[_boxes[1:]]-intersection)
-        iou = intersection / Union
-        idx = (iou <= iou_threshold).nonzero().squeeze()
-        if idx.numel() == 0:
-            break
-        _boxes = _boxes[idx+1]
-    keep = torch.Tensor(keep).to(device=scores.device).long()  
+      
     #############################################################################
     #                              END OF YOUR CODE                             #
     #############################################################################
@@ -1071,43 +1035,16 @@ class FCOS(nn.Module):
             # level_pred_scores, level_pred_classes = torch.max(torch.sqrt(level_cls_logits.sigmoid_() * level_ctr_logits.sigmoid_()), dim=1)
 
             actual_scores, actual_classes = torch.max(level_pred_scores, dim=1)
-            
-            # level_pred_scores, classes_indices = torch.max(level_pred_scores,dim=-1)
-            # print(level_pred_scores.shape)
-            # print(level_pred_scores)
-            # print(classes_indices)
-            # print(torch.max(level_ctr_logits,dim=-1))
-            # level_pred_classes = classes_indices.view(-1)
-            # print(level_pred_classes.shape)
-            # print(level_pred_scores)
-            # print(level_pred_classes.shape)
-            # print(level_pred_scores.shape)
-            # level_pred_boxes = fcos_apply_deltas_to_locations(level_deltas, level_locations,self.backbone.fpn_strides[level_name])
 
-            # original_shape = level_pred_boxes.shape
-            # print("original:",original_shape)
 
             # Step 2:
             # Replace "PASS" statement with your code
 
-            # mask = level_pred_scores[level_pred_scores>test_score_thresh]
-            # print(level_pred_boxes.shape)
-
+            
             level_pred_classes = actual_classes[actual_scores > test_score_thresh]
             level_pred_scores = actual_scores[actual_scores > test_score_thresh]
 
-            # retain_mask = level_pred_scores > test_score_thresh
-            # level_pred_boxes = level_deltas[retain_mask]
-            # level_pred_classes = level_pred_classes[retain_mask]
-            # level_pred_scores = level_pred_scores[retain_mask]
-            # level_act_locations = level_locations[retain_mask]
-            # mask = level_pred_scores.ge(test_score_thresh)
-            # # print(mask)
-            # level_pred_scores = torch.masked_select(level_pred_scores, mask)
-            # # level_pred_classes = level_pred_classes[level_pred_scores>test_score_thresh]
-            # level_pred_classes = torch.masked_select(level_pred_classes, mask)
-            # level_pred_boxes = torch.masked_select(level_pred_boxes, mask.repeat_interleave(4).reshape(original_shape))
-            
+                        
             # Step 3:
             # Replace "PASS" statement with your code
             # stride = 2 ** (int(level_name[1]) + 1)
